@@ -114,6 +114,14 @@ class OsLinux {
      * fileLimit_linux
      */
     $assocArray = array();
+    $assocArray['systeminfo_linux'] ="test";
+    $assocArray['ports_linux'] ="test";
+    $assocArray['passwordComplexity_linux'] ="test";
+    $assocArray['passwordLimit_linux'] ="test";
+    $assocArray['failLoginReduce_linux'] ="test";
+    $assocArray['auditd_linux'] ="test";
+    $assocArray['remoteRootLogin_linux'] ="test";
+    $assocArray['fileLimit_linux'] ="test";
   /*命令行配置文件分析流程
     * 1. 找到上下命令分割
     * 2. 分割成行
