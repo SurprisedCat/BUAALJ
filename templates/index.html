@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<!-- Meta -->
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<meta http-equiv="Cache-Control" content="no-cache">
+		<!-- End of Meta -->
+		
+		<!-- Page title -->
+		<title>Wide Admin - Login</title>
+		<!-- End of Page title -->
+		
+		<!-- Libraries -->
+		<link type="text/css" href="css/login.css" rel="stylesheet" />	
+		<link type="text/css" href="css/smoothness/jquery-ui-1.7.2.custom.html" rel="stylesheet" />	
+		
+		<script type="text/javascript" src="js/jquery-1.3.2.min.js"></script>
+		<script type="text/javascript" src="js/easyTooltip.js"></script>
+		<script type="text/javascript" src="js/jquery-ui-1.7.2.custom.min.js"></script>
+		<!--<script type="text/javascript" src="js/emptyTest.js"></script>
+		<!-- End of Libraries -->	
+	</head>
+	<body>
+	<div id="container">
+		<div class="logo">
+			<a href="#"><img src="img/logo.png" alt="" /></a>
+		</div>
+		<div id="box">
+			<form id="loginForm" action="dashboard.php" method="POST">
+			<p class="main">
+				<label>账户: </label>
+				<input id="username" type="text" name="username" value="" /> 
+				<label>密码: </label>
+				<input  id="password" type="password" name="captchas" value="" maxlength="8" >
+			</p>
+
+			<p class="space">
+				<input type="submit" value="Login" class="login"/>
+			</p>
+
+			</form>
+			<span class="designer">Powered By LJ</span>
+		</div>
+			
+	</div>
+	<script type="text/javascript">
+		document.onkeydown = function (event) {
+			if(event.keyCode == 13) {
+				document.getElementById("loginForm").submit();
+			}
+		}
+	</script>
+	</body>
+</html>

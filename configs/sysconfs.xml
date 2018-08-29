@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+	<db>
+		<user>root</user>
+		<password>root</password>
+		<dbname>sysrisk</dbname>
+	</db>
+	<directory>
+		<shell>resource/shell</shell>
+		<confile>resource/confs</confile>
+		<os>resource/confs/os</os>
+		<router>resource/confs/router</router>
+		<middle>resource/confs/middle</middle>
+		<database>resource/confs/database</database>
+	</directory>
+</config>
