@@ -1,5 +1,8 @@
 <?php
 
+/*
+* 通过文件信息选择具体的功能类
+*/ 
 class ConfigAnalysisLj {
 
     public $resource;   
@@ -75,12 +78,14 @@ class ConfigAnalysisLj {
 
 }
 
-class OsLinux {
-
-  private $info;//存储文件名信息
-  private $contents;//存储文件内容
-  private $tableName;//数据库名称
-  private $dblj;//数据库连接
+/*公共类，实现各种配置文件的公共功能，本身不能独立使用
+ *需要继承后使用
+ */
+abstract class TypeProcess {
+  protected $info;//存储文件名信息
+  protected $contents;//存储文件内容
+  protected $tableName;//数据库名称
+  protected $dblj;//数据库连接
   function __construct($fileInfo,$fileContents="") {
     $this->info = $fileInfo;
     $this->tableName = name2Table($this->info['category'],$this->info['file']);
@@ -95,12 +100,44 @@ class OsLinux {
   }
 
   //返回一个关联数组，只有一个文件的数据
-  function showFirstStepRes() {
+  public function showFirstStepRes() {
     return $this->dblj->selectOneRow("select * from ".$this->tableName." where id = '".$this->info["id"]."';");
   }
 
-//正则匹配
-  function pregMatchLj(){
+  //抽象方法，正则匹配抽象类
+  abstract public function pregMatchLj();
+}
+
+
+/*OS Linux的具体处理
+* 实现正则匹配类
+*/
+class OsLinux extends TypeProcess {
+/*命令行配置文件分析流程
+    * 1. 找到上下命令分割
+    * 2. 分割成行
+    * 3. 逐行匹配
+    */
+    /*一般配置文件分析流程
+    * 1. 关键字匹配
+    */
+
+    //splitByCommand($cmd1,$cmd2)
+    //1. 找到上下命令分割 函数实现
+    //2. 分割成行
+  protected function splitByCommand($cmd1,$cmd2){
+    $match = array();
+    preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!',$this->contents,$match);
+    //去除最后一行
+    $match=preg_replace('!.*('.$cmd2.')$!','',$match[0][0],1);
+    //去除第一行
+    $match=preg_replace('![^\n]+\n!','',$match,1);
+    //按行分割,形成最终数组结果
+    $match=preg_split("![\r\n]+!",$match,-1,PREG_SPLIT_NO_EMPTY);
+    return $match;
+  }
+//正则匹配抽象类的实现
+  public function pregMatchLj(){
 
     //OS Linux 匹配项
     /* id(不需要)
@@ -113,37 +150,43 @@ class OsLinux {
      * remoteRootLogin_linux  
      * fileLimit_linux
      */
-    $assocArray = array();
-    $assocArray['systeminfo_linux'] ="test";
-    $assocArray['ports_linux'] ="test";
-    $assocArray['passwordComplexity_linux'] ="test";
-    $assocArray['passwordLimit_linux'] ="test";
-    $assocArray['failLoginReduce_linux'] ="test";
-    $assocArray['auditd_linux'] ="test";
-    $assocArray['remoteRootLogin_linux'] ="test";
-    $assocArray['fileLimit_linux'] ="test";
-  /*命令行配置文件分析流程
-    * 1. 找到上下命令分割
-    * 2. 分割成行
-    * 3. 逐行匹配
-    */
-    /*一般配置文件分析流程
-    * 1. 关键字匹配
-    */
+    $assocArray = array(
+      'systeminfo_linux'=> "",
+      'ports_linux'=>"",
+      'passwordComplexity_linux'=>'',
+      'passwordLimit_linux'=>'',
+      'failLoginReduce_linux'=>'',
+      'auditd_linux'=>'',
+      'remoteRootLogin_linux'=>'',
+      'fileLimit_linux'=>'',
+    );
+  
 
-    echo '<pre>';
     /****linux配置分析****/
+    //systeminfo_linux
+    $confArray = $this->splitByCommand("uname -a","ifconfig -a");
+    $pregStr = "!.*!";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $assocArray['systeminfo_linux'] = $tempRes[0];
+    //systeminfo_linux
+
 
     /**********识别分析系统端口信息************/
+    //ports_linux
+    $confArray = $this->splitByCommand("netstat -anp| grep LISTEN","cat /etc/shadow");
+    $pregStr = "!0.0.0.0:(\d{1,})[^/]+\/([^#-]*)!";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $pregStr = "!:::(\d{1,})[^/]+\/([^#-]*)!";
+    $tempRes2 = preg_grep($pregStr,$confArray);
+    array_merge($tempRes,$tempRes2);
+    var_dump($tempRes);
+    //ports_linux
+    echo "======================<br/>";
+    /**********识别分析系统端口信息************/
     //字符串拆分成数组，按行处理
-    $para1='netstat -anp| grep LISTEN';
-    $para2='cat /etc/shadow';
-    preg_match_all('!('.$para1.')[\s\S]*('.$para2.')!',$this->contents,$match);
-    $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    $match1=explode("\r\n",$match);
+    $confArray = $this->splitByCommand("netstat -anp| grep LISTEN","cat /etc/shadow");
     $ports_re=array();
-    foreach($match1 as $line){
+    foreach($confArray as $line){
       preg_match_all('!0.0.0.0:(\d{1,})[^/]+\/([^# ]*)!',$line,$re);
       if($re[0]!=null){
         $ports_re[$re[1][0]]=$re[2][0];
@@ -158,14 +201,9 @@ class OsLinux {
     print_r($ports_re);
 
     /**********识别分析弱口令************/
-    $para1='cat /etc/shadow';
-    $para2='cat /etc/login.defs';
-    preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
-    $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    $match1=explode("\r\n",$match);
+    $confArray = $this->splitByCommand('cat /etc/shadow','cat /etc/login.defs');
     $weakpassword_judgment=array();
-    foreach($match1 as $line){
+    foreach($confArray as $line){
       preg_match_all('!^(\w+):(\$[^:]+)!',$line,$temp);
       if($temp[2]!=null){
         $weakpassword_judgment[$temp[1][0]]=$temp[2][0];
@@ -251,31 +289,9 @@ class OsLinux {
 }
 
 
-class OsWindows {
+class OsWindows extends TypeProcess {
 
-  private $info;//存储文件名信息
-  private $contents;//存储文件内容
-  private $tableName;//数据库名称
-  private $dblj;//数据库连接
-  function __construct($fileInfo,$fileContents="") {
-    $this->info = $fileInfo;
-    $this->tableName = name2Table($this->info['category'],$this->info['file']);
-    //如果第二个参数是空，则表示展示项
-    //如果第二个参数不是空的，则表示是分析项
-    if(strcmp($fileContents,"")==0){//为空
-    }
-    else{
-      $this->contents = $fileContents;
-    }
-    $this->dblj = new DbLj(); 
-  }
-
-  //返回一个关联数组，只有一个文件的数据
-  function showFirstStepRes() {
-    return $this->dblj->selectOneRow("select * from ".$this->tableName." where id = '".$this->info["id"]."';");
-  }
-
-//正则匹配
+  //正则匹配抽象类的实现
   function pregMatchLj(){
     //OS Windows 匹配项
     /* id(不需要)
@@ -291,18 +307,19 @@ class OsWindows {
      * firewall_windows
      * screenProtect_windows
      */
-    $assocArray = array();
-    $assocArray['sensitiveAuthority_windows'] ="test";
-    $assocArray['systeminfo_windows'] ="test";
-    $assocArray['passwordComplexity_windows'] ="test";
-    $assocArray['ports_windows'] ="test";
-    $assocArray['remoteLogin_windows'] ="test";
-    $assocArray['software_windows'] ="test";
-    $assocArray['accountLock_windows'] ="test";
-    $assocArray['netShare_windows'] ="test";
-    $assocArray['auditStrategy_windows'] ="test";
-    $assocArray['firewall_windows'] ="test";
-    $assocArray['screenProtect_windows'] ="test";
+    $assocArray = array(
+      'sensitiveAuthority_windows'=> "",
+      'systeminfo_windows'=>"",
+      'passwordComplexity_windows'=>'',
+      'ports_windows'=>'',
+      'remoteLogin_windows'=>'',
+      'software_windows'=>'',
+      'accountLock_windows'=>'',
+      'netShare_windows'=>'',
+      'auditStrategy_windows'=>'',
+      'firewall_windows'=>'',
+      'screenProtect_windows'=>'',
+    );
     /*命令行配置文件分析流程
     * 1. 找到上下命令分割
     * 2. 分割成行

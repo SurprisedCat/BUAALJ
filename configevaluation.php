@@ -18,5 +18,6 @@ $lineChart = array(10,40,20,30);
 $smarty->assign("info",$fileLj->info);
 $smarty->assign("configRes",$configRes);
 $smarty->assign("lineChart",$lineChart);
+die();
 $smarty->display("configevaluation.html");
 ?>
