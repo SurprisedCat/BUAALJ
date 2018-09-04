@@ -1,9 +1,16 @@
 <?php
 require('./init.php');
 require_once('./libs/ConfigAnalysis.class.php');
+if(!isset($_GET['id'])){
+    header("Location:error.php");
+}
+$dblj = new DbLj(); 
+$fileExsit = $dblj->selectOneRow("select * from ".$dbPre."fileinfo where id = '".$_GET['id']."';");
+if(!$fileExsit){
+    header("Location:error.php");
+}
 //获取文件，解析base64编码
 $fileLj = new FileLJ($_GET['id'],true);
-
 //将文件信息作为初始化参数交给初始分析类,表示只是显示已有的信息
 $FirstStepResLj = new ConfigAnalysisLj($fileLj->info,$fileLj->getContents());
 

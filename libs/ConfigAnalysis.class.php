@@ -55,7 +55,7 @@ class ConfigAnalysisLj {
           case "MI":
           switch($subtype){
             case "apache-httpd":
-            echo '$resource = MiApacheHttpd($fileInfo,$fileContents)';
+            $this->resource = new MiApacheHttpd($fileInfo,$fileContents);
             break;
           case "tomcat-web.xml":
           case "tomcat-users.xml":
@@ -549,7 +549,7 @@ class OsWindows extends TypeProcess {
 
 }
 //////李娟尝试!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-class Miapache extends TypeProcess {
+class MiApacheHttpd extends TypeProcess {
 
   //正则匹配抽象类的实现
   function pregMatchLj(){
@@ -575,20 +575,21 @@ class Miapache extends TypeProcess {
 
     /****apache配置分析****/
     //prohibitDirectoryListing_apache
-
     $confArray = $this->splitByCommand("\#",null);
-    print_r($confArray);
+    // print_r($confArray);
     $pregStr = "!(Options Indexes FollowSymLinks)|(Options -Indexes FollowSymLinks)|(Options FollowSymLinks)!i";
     //preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!',$this->contents,$match);
     $tempRes = preg_grep($pregStr,$confArray);
+    print_r($tempRes);
     $res = array();
     foreach($tempRes as $value){
       $res[] = preg_split("!:!",$value);
     }
-    $assocArray['systeminfo_windows'] = json_encode($res);
+    $assocArray['prohibitDirectoryListing_apache'] = json_encode($res);
     die();
     //prohibitDirectoryListing_apache
 
     /****apache配置分析****/
   }
 }
+
