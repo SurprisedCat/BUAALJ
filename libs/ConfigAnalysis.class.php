@@ -104,6 +104,29 @@ abstract class TypeProcess {
     return $this->dblj->selectOneRow("select * from ".$this->tableName." where id = '".$this->info["id"]."';");
   }
 
+    //splitByCommand($cmd1,$cmd2)
+    //1. 找到上下命令分割 函数实现
+    //2. 分割成行
+    protected function splitByCommand($cmd1,$cmd2){
+      $match = array();
+      //如果匹配的是最后一个命令，则需要匹配到文件的结尾
+      if($cmd2==null){
+        $cmd2 = ".*";
+      }
+      preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!',$this->contents,$match);
+      //去除最后一行，如果是最后一个命令则不需要去除最后一行
+      if($cmd2 != ".*"){
+        $match=preg_replace('!.*('.$cmd2.')$!','',$match[0][0],1);  
+      }else {
+        $match = $match[0][0];
+      }
+      //去除第一行
+      $match=preg_replace('![^\n]+\n!','',$match,1);
+      //按行分割,形成最终数组结果
+      $match=preg_split("![\r\n]+!",$match,-1,PREG_SPLIT_NO_EMPTY);
+      return $match;
+    }
+
   //抽象方法，正则匹配抽象类
   abstract public function pregMatchLj();
 }
@@ -122,20 +145,7 @@ class OsLinux extends TypeProcess {
     * 1. 关键字匹配
     */
 
-    //splitByCommand($cmd1,$cmd2)
-    //1. 找到上下命令分割 函数实现
-    //2. 分割成行
-  protected function splitByCommand($cmd1,$cmd2){
-    $match = array();
-    preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!',$this->contents,$match);
-    //去除最后一行
-    $match=preg_replace('!.*('.$cmd2.')$!','',$match[0][0],1);
-    //去除第一行
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    //按行分割,形成最终数组结果
-    $match=preg_split("![\r\n]+!",$match,-1,PREG_SPLIT_NO_EMPTY);
-    return $match;
-  }
+
 //正则匹配抽象类的实现
   public function pregMatchLj(){
 
@@ -167,116 +177,188 @@ class OsLinux extends TypeProcess {
     $confArray = $this->splitByCommand("uname -a","ifconfig -a");
     $pregStr = "!.*!";
     $tempRes = preg_grep($pregStr,$confArray);
-    $assocArray['systeminfo_linux'] = $tempRes[0];
+    $assocArray['systeminfo_linux'] = json_encode($tempRes[0]);
     //systeminfo_linux
 
 
     /**********识别分析系统端口信息************/
     //ports_linux
     $confArray = $this->splitByCommand("netstat -anp| grep LISTEN","cat /etc/shadow");
-    $pregStr = "!0.0.0.0:(\d{1,})[^/]+\/([^#-]*)!";
-    $tempRes = preg_grep($pregStr,$confArray);
-    $pregStr = "!:::(\d{1,})[^/]+\/([^#-]*)!";
-    $tempRes2 = preg_grep($pregStr,$confArray);
-    array_merge($tempRes,$tempRes2);
-    var_dump($tempRes);
-    //ports_linux
-    echo "======================<br/>";
-    /**********识别分析系统端口信息************/
-    //字符串拆分成数组，按行处理
-    $confArray = $this->splitByCommand("netstat -anp| grep LISTEN","cat /etc/shadow");
-    $ports_re=array();
-    foreach($confArray as $line){
-      preg_match_all('!0.0.0.0:(\d{1,})[^/]+\/([^# ]*)!',$line,$re);
-      if($re[0]!=null){
-        $ports_re[$re[1][0]]=$re[2][0];
-      }
-      preg_match_all('!:::(\d{1,})[^/]+\/([^# ]*)!',$line,$re);
-      if($re[0]!=null){
-        //端口：$re[1][0]   程序：$re[2][0]   输出到$ports_re【端口：程序】字典中
-        $ports_re[$re[1][0]]=$re[2][0];
+    
+    //端口有两种模式的匹配
+    $pregStr1 = "!0.0.0.0:(\d{1,})[^/]+\/([^# ]*)!";
+    $tempRes1 = preg_grep($pregStr1,$confArray);
+    $pregStr2 = "!:::(\d{1,})[^/]+\/([^# ]*)!";
+    $tempRes2 = preg_grep($pregStr2,$confArray);
+    $tempRes = array_merge($tempRes1,$tempRes2);
+    //获取端口和运行再此端口的程序
+    $mediaRes = array();
+    foreach($tempRes as $value){
+      if(preg_match($pregStr1,$value,$match1)){
+        $mediaRes[] = $match1[1].":".$match1[2];
+      }     
+      elseif(preg_match($pregStr2,$value,$match2)){
+        $meidaRes[] = $match2[1].":".$match2[2];
       }
     }
-    //$ports_re【端口：程序】字典
-    print_r($ports_re);
+    $res = array();
+    foreach($mediaRes as $value){
+      $res[] = preg_split("!:!",$value);
+    }
+    $assocArray["ports_linux"] = json_encode($res);
+    //ports_linux
 
     /**********识别分析弱口令************/
+    //passwordComplexity_linux
     $confArray = $this->splitByCommand('cat /etc/shadow','cat /etc/login.defs');
-    $weakpassword_judgment=array();
-    foreach($confArray as $line){
-      preg_match_all('!^(\w+):(\$[^:]+)!',$line,$temp);
-      if($temp[2]!=null){
-        $weakpassword_judgment[$temp[1][0]]=$temp[2][0];
+
+    $pregStr='!^[\w]+:\$[^:]+!';
+    $tempRes=preg_grep($pregStr,$confArray);
+    $mediaRes = array();
+    foreach($tempRes as $value){
+      preg_match($pregStr,$value,$match);
+      $mediaRes[] = $match[0];
+    }
+    $res = array();
+    foreach($mediaRes as $value){
+      $res[] = preg_split("!:!",$value);
+    }
+    $assocArray["passwordComplexity_linux"] = json_encode($res);
+    //passwordComplexity_linux
+    
+   
+    /**********识别分析口令复杂度************/
+    //passwordLimit_linux	
+    $confArray = $this->splitByCommand('cat /etc/login.defs','cat /etc/pam.d/su');
+
+    $pregStr='!(PASS_MAX_DAYS)|(PASS_MIN_DAYS)|(PASS_MIN_LEN)|(PASS_WARN_AGE)!';
+    $tempRes=preg_grep($pregStr,$confArray);
+    $mediaRes = array();
+    foreach($tempRes as $value){
+      $mediaRes[] = $value;
+    }
+    $res = array();
+    foreach($mediaRes as $value){
+      $res[] = preg_split("!\s+!",$value);
+    }
+    $assocArray["passwordLimit_linux"] = json_encode($res);
+    // /**********识别分析口令策略(lijuan 原版)************/
+    // $para1='cat /etc/login.defs';
+    // $para2='cat /etc/pam.d/su';
+    // preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
+    // $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
+    // $match=preg_replace('![^\n]+\n!','',$match,1);
+    // preg_match_all('!PASS_MAX_DAYS\s+?(\d.+)!m',$match,$PASS_MAX_DAYS);
+    // preg_match_all('!PASS_MIN_DAYS\s+?(\d.+)!m',$match,$PASS_MIN_DAYS);
+    // preg_match_all('!PASS_MIN_LEN\s+?(\d.+)!m',$match,$PASS_MIN_LEN);
+    // preg_match_all('!PASS_WARN_AGE\s+?(\d.+)!m',$match,$PASS_WARN_AGE);
+    // $password_policy=array();
+    // $password_policy['PASS_MAX_DAYS']=$PASS_MAX_DAYS[1][0];
+    // $password_policy['PASS_MIN_DAYS']=$PASS_MIN_DAYS[1][0];
+    // $password_policy['PASS_MIN_LEN']=$PASS_MIN_LEN[1][0];
+    // $password_policy['PASS_WARN_AGE']=$PASS_WARN_AGE[1][0];
+    // //$password_policy，密码策略：过期时间长度等
+    // print_r($password_policy);
+    //passwordLimit_linux	
+
+       
+    // $para1='cat /etc/pam.d/system-auth';
+    // $para2='$';
+    // preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
+    // $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
+    // $match=preg_replace('![^\n]+\n!','',$match,1);
+    // $password_complex=array();
+    // $cxpara = array();
+    // preg_match_all('!^password\s+requisite\s+pam_cracklib.so(.*)!m',$match,$temp);
+    // foreach ($temp[1] as $var) 
+    // {
+    //   $cxpara[] = preg_split('!\s+!',$var,0,PREG_SPLIT_NO_EMPTY);
+    // }
+    // //$password_complex，密码复杂度配置结果
+    // $password_complex=$cxpara[1];
+    // print_r($password_complex);
+    //failLoginReduce_linux	
+    $confArray = $this->splitByCommand('cat /etc/pam.d/system-auth','cat /etc/security/access.conf');
+    $pregStr='!password[\s]+requisite[\s]+pam_cracklib.so!';
+    $tempRes=preg_grep($pregStr,$confArray);
+    $mediaRes = array();
+    //虽然只有一行，但是为了保证程序结构一致，用了foreach
+    foreach($tempRes as $value){
+      $pregStr='!\w+=-?\d+!';
+      //需要匹配多个项目，返回一个二维数组
+      preg_match_all($pregStr,$value,$match);
+      foreach($match[0] as $innerValue){
+        $mediaRes[] = $innerValue;
       }
     }
-    //$weakpassword_judgment【再用用户名：加密口令】字典
-    print_r($weakpassword_judgment);
-
-    /**********识别分析口令复杂度************/
-    $para1='cat /etc/pam.d/system-auth';
-    $para2='$';
-    preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
-    $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    $password_complex=array();
-    $cxpara = array();
-    preg_match_all('!^password\s+requisite\s+pam_cracklib.so(.*)!m',$match,$temp);
-    foreach ($temp[1] as $var) 
-    {
-      $cxpara[] = preg_split('!\s+!',$var,0,PREG_SPLIT_NO_EMPTY);
+    $res = array();
+    foreach($mediaRes as $value){
+      $res[] = preg_split("!=!",$value);
     }
-    //$password_complex，密码复杂度配置结果
-    $password_complex=$cxpara[1];
-    print_r($password_complex);
+    $assocArray["failLoginReduce_linux"] = json_encode($res);
+    //failLoginReduce_linux	
 
-    /**********识别分析口令策略************/
-    $para1='cat /etc/login.defs';
-    $para2='cat /etc/pam.d/su';
-    preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
-    $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    preg_match_all('!PASS_MAX_DAYS\s+?(\d.+)!m',$match,$PASS_MAX_DAYS);
-    preg_match_all('!PASS_MIN_DAYS\s+?(\d.+)!m',$match,$PASS_MIN_DAYS);
-    preg_match_all('!PASS_MIN_LEN\s+?(\d.+)!m',$match,$PASS_MIN_LEN);
-    preg_match_all('!PASS_WARN_AGE\s+?(\d.+)!m',$match,$PASS_WARN_AGE);
-    $password_policy=array();
-    $password_policy['PASS_MAX_DAYS']=$PASS_MAX_DAYS[1][0];
-    $password_policy['PASS_MIN_DAYS']=$PASS_MIN_DAYS[1][0];
-    $password_policy['PASS_MIN_LEN']=$PASS_MIN_LEN[1][0];
-    $password_policy['PASS_WARN_AGE']=$PASS_WARN_AGE[1][0];
-    //$password_policy，密码策略：过期时间长度等
-    print_r($password_policy);
+    // /**********识别分析日志审计************/
+    // $para1='service --status-all';
+    // $para2='cat /etc/pam.d/login';
+    // preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
+    // $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
+    // $match=preg_replace('![^\n]+\n!','',$match,1);
+    // preg_match_all('!syslogd[\s\S]*?!m',$match,$audit_syslog);
+    // print_r($audit_syslog);
+    // //(running)|(stopped)
+    // auditd_linux
+    $confArray = $this->splitByCommand('service --status-all','cat /etc/*syslog*.conf');
+    $pregStr='!^auditd!';
+    $tempRes=preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = $value;
+    }
+    $assocArray["auditd_linux"] = json_encode($res);
+    // auditd_linux
 
-    /**********识别分析登录失败处理************/
+// /**********识别分析远程登录************/
+    // $para1='cat /etc/ssh/sshd_config';
+    // $para2='cat /etc/inittab';
+    // preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
+    // $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
+    // $match=preg_replace('![^\n]+\n!','',$match,1);
+    // preg_match_all('!Port\s+?(\d+)!m',$match,$sshPort);
+    // preg_match_all('!PermitRootLogin\s+?(\S+)!m',$match,$PermitRootLogin);
+    // $sshpolicy=array();
+    // $sshpolicy['sshPort']=$sshPort[1][0];
+    // $sshpolicy['PermitRootLogin']=$PermitRootLogin[1][0];
+    // //$sshpolicy  ssh远程登录端口、允许/拒绝
+    // print_r($sshpolicy);
+    //remoteRootLogin_linux
+    $confArray = $this->splitByCommand('cat /etc/ssh/sshd_config','ps -ef');
+    $pregStr='!(^PermitRootLogin)|(Port\s+?(\d+))!';
+    $tempRes=preg_grep($pregStr,$confArray);
+    $mediaRes = array();
+    foreach($tempRes as $value){
+      $mediaRes[] = $value;
+    }
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!\s+!",$value);
+    }
+    $assocArray["remoteRootLogin_linux"] = json_encode($res);
+    //remoteRootLogin_linux
 
-    /**********识别分析远程登录************/
-    $para1='cat /etc/ssh/sshd_config';
-    $para2='cat /etc/inittab';
-    preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
-    $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    preg_match_all('!Port\s+?(\d+)!m',$match,$sshPort);
-    preg_match_all('!PermitRootLogin\s+?(\S+)!m',$match,$PermitRootLogin);
-    $sshpolicy=array();
-    $sshpolicy['sshPort']=$sshPort[1][0];
-    $sshpolicy['PermitRootLogin']=$PermitRootLogin[1][0];
-    //$sshpolicy  ssh远程登录端口、允许/拒绝
-    print_r($sshpolicy);
+    //fileLimit_linux
+    $confArray = $this->splitByCommand('umask','cat /etc/profile');
+    $pregStr='!.*!';
+    $tempRes=preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = $value;
+    }
+    $assocArray["fileLimit_linux"] = json_encode($res);
+    //fileLimit_linux   
 
-    /**********别分析弱口令************/
-
-    /**********识别分析日志审计************/
-    $para1='service --status-all';
-    $para2='cat /etc/pam.d/login';
-    preg_match_all('!('.$para1.')[\s\S]*?('.$para2.')!',$this->contents,$match);
-    $match=preg_replace('!.*('.$para2.')$!','',$match[0][0],1);
-    $match=preg_replace('![^\n]+\n!','',$match,1);
-    preg_match_all('!syslogd[\s\S]*?!m',$match,$audit_syslog);
-    print_r($audit_syslog);
-    //(running)|(stopped)
+    $assocArray["riskResult"] = json_encode("0");
     /**结束：linux配置分析**/
-
-    echo '</pre>';
     
     //集中更新,参数1关联数组，参数2表名称，参数3文件id
     $updateDbRes = $this->dblj->multipleUpdate($assocArray,$this->tableName,$this->info["id"]);
@@ -308,8 +390,8 @@ class OsWindows extends TypeProcess {
      * screenProtect_windows
      */
     $assocArray = array(
-      'sensitiveAuthority_windows'=> "",
       'systeminfo_windows'=>"",
+      'sensitiveAuthority_windows'=> "",
       'passwordComplexity_windows'=>'',
       'ports_windows'=>'',
       'remoteLogin_windows'=>'',
@@ -329,6 +411,134 @@ class OsWindows extends TypeProcess {
     * 1. 关键字匹配
     */
 
+    /****windows配置分析****/
+    //systeminfo_windows
+    $confArray = $this->splitByCommand("1.systeminfo","2.port");
+    $pregStr = "!(^os\s+名称)|(^os\s+版本)!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!:!",$value);
+    }
+    $assocArray['systeminfo_windows'] = json_encode($res);
+    //systeminfo_windows
+
+    //sensitiveAuthority_windows
+    $confArray = $this->splitByCommand("6.local_strategy","7.share");
+    $pregStr = "!(SeRemoteShutdownPrivilege)|(SeShutdownPrivilege)|(SeTakeOwnershipPrivilege)!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!\s+=\s+!",$value);
+    }
+    $assocArray['sensitiveAuthority_windows'] = json_encode($res);
+    //sensitiveAuthority_windows
+
+    //passwordComplexity_windows
+    $confArray = $this->splitByCommand("6.local_strategy","7.share");
+    $pregStr = "!(PasswordComplexity)|(MinimumPasswordLength)|(MinimumPasswordAge)|(MaximumPasswordAge)|(PasswordHistorySize)!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!\s+=\s+!",$value);
+    }
+    $assocArray['passwordComplexity_windows'] = json_encode($res);
+    //passwordComplexity_windows
+
+    //ports_windows
+    $confArray = $this->splitByCommand("2.port","3.service");
+    $pregStr = "!TCP\s+0.0.0.0:\d{1,5}!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      preg_match("!0.0.0.0:(\d{1,5})!",$value,$match);
+      $res[] = $match[1];
+    }
+    $assocArray['ports_windows'] = json_encode($res);
+    //ports_windows
+
+    //remoteLogin_windows
+    $confArray = $this->splitByCommand("8.other",null);
+    $pregStr = "!fDenyTSConnections!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res = preg_split("!\s+REG_DWORD\s+!",$value);
+      $res[0] = trim($res[0]);
+    }
+    $assocArray['remoteLogin_windows'] = json_encode($res);
+    //remoteLogin_windows
+
+    //software_windows
+    $confArray = $this->splitByCommand("5.software","6.local_strategy");
+    $pregStr = "!software_name:360Safe!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    if($tempRes != null){
+      $assocArray['software_windows'] = json_encode("software_name:360Safe");
+    } else {
+      $assocArray['software_windows'] = json_encode(false);
+    }
+    //software_windows
+
+    //accountLock_windows
+    $confArray = $this->splitByCommand("6.local_strategy","7.share");
+    $pregStr = "!(LockoutDuration)|(ResetLockoutCount)|(LockoutBadCount)!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!\s+=\s+!",$value);
+    }
+    $assocArray['accountLock_windows'] = json_encode($res);
+    //accountLock_windows
+
+    //netShare_windows
+    $confArray = $this->splitByCommand("7.share","8.other");
+    $pregStr = '!^\w+\$!i';
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_replace('!\$.*!','\$',$value);
+    }
+    $assocArray['netShare_windows'] = json_encode($res);
+    //netShare_windows
+
+    //auditStrategy_windows
+    $confArray = $this->splitByCommand("6.local_strategy","7.share");
+    $pregStr = "!(AuditAccountManage)|(AuditAccountLogon)|(AuditSystemEvents)|(AuditDSAccess)|(AuditProcessTracking)|(AuditPrivilegeUseuditObjectAccess)|(AuditLogonEvents)|(AuditPolicyChange)!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!\s+=\s+!",$value);
+    }
+    $assocArray['auditStrategy_windows'] = json_encode($res);
+    //auditStrategy_windows
+
+    //firewall_windows
+    $confArray = $this->splitByCommand("8.other",null);
+    $pregStr = "!EnableFirewall!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res = preg_split("!\s+REG_DWORD\s+!",$value);
+      $res[0] = trim($res[0]);
+    }
+    $assocArray['firewall_windows'] = json_encode($res);
+    //firewall_windows
+
+    //screenProtect_windows
+    $confArray = $this->splitByCommand("8.other",null);
+    $pregStr = "!ScreenSaveActive!i";
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res = preg_split("!\s+REG_SZ\s+!",$value);
+      $res[0] = trim($res[0]);
+    }
+    $assocArray['screenProtect_windows'] = json_encode($res);
+    //screenProtect_windows
+
+    /****windows配置分析****/
+
     //集中更新,参数1关联数组，参数2表名称，参数3文件id
     $updateDbRes = $this->dblj->multipleUpdate($assocArray,$this->tableName,$this->info["id"]);
     //更新进度
@@ -337,4 +547,48 @@ class OsWindows extends TypeProcess {
     return $updateDbRes;
   }
 
+}
+//////李娟尝试!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+class Miapache extends TypeProcess {
+
+  //正则匹配抽象类的实现
+  function pregMatchLj(){
+    //MI apache 匹配项
+    /* id(不需要)
+     * prohibitDirectoryListing_apache
+     * fileAccessForbiden_apache
+     * ports_apache
+     * closeHtaccess_apache
+     * hideVersion_apache
+     * logLevel_apache
+     * logFolder_apache
+     */
+        $assocArray = array(
+      'prohibitDirectoryListing_apache'=>"",
+      'fileAccessForbiden_apache'=> "",
+      'ports_apache'=>'',
+      'closeHtaccess_apache'=>'',
+      'hideVersion_apache'=>'',
+      'logLevel_apache'=>'',
+      'logFolder_apache'=>'',
+    );
+
+    /****apache配置分析****/
+    //prohibitDirectoryListing_apache
+
+    $confArray = $this->splitByCommand("\#",null);
+    print_r($confArray);
+    $pregStr = "!(Options Indexes FollowSymLinks)|(Options -Indexes FollowSymLinks)|(Options FollowSymLinks)!i";
+    //preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!',$this->contents,$match);
+    $tempRes = preg_grep($pregStr,$confArray);
+    $res = array();
+    foreach($tempRes as $value){
+      $res[] = preg_split("!:!",$value);
+    }
+    $assocArray['systeminfo_windows'] = json_encode($res);
+    die();
+    //prohibitDirectoryListing_apache
+
+    /****apache配置分析****/
+  }
 }
