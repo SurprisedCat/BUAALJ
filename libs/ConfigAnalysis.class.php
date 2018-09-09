@@ -104,7 +104,7 @@ abstract class TypeProcess {
     return $this->dblj->selectOneRow("select * from ".$this->tableName." where id = '".$this->info["id"]."';");
   }
 
-    //splitByCommand($cmd1,$cmd2)
+    //splitByCommand($cmd1,$cmd2)贪婪模式
     //1. 找到上下命令分割 函数实现
     //2. 分割成行
     protected function splitByCommand($cmd1,$cmd2){
@@ -124,6 +124,31 @@ abstract class TypeProcess {
       $match=preg_replace('![^\n]+\n!','',$match,1);
       //按行分割,形成最终数组结果
       $match=preg_split("![\r\n]+!",$match,-1,PREG_SPLIT_NO_EMPTY);
+      return $match;
+    }
+    //splitByCommand($cmd1,$cmd2)贪婪模式
+    //1. 找到上下命令分割 函数实现
+    //2. 分割成行懒惰模式
+    protected function splitByCommandLazy($cmd1,$cmd2){
+      $match = array();
+      //如果匹配的是最后一个命令，则需要匹配到文件的结尾
+      if($cmd2==null){
+        $cmd2 = ".*";
+      }
+      //这个类和上一个类的区别就在这里
+      preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!iU',$this->contents,$match);
+      //去除最后一行，如果是最后一个命令则不需要去除最后一行
+      if($cmd2 != ".*"){
+        $match = $match[0];
+      }
+      //去除第一行
+      // $match=preg_replace('![^\n]+\n!','',$match,1);
+      //按行分割,形成最终数组结果
+      $counter = 0;
+      foreach($match as $value){
+        $match[$counter]=preg_split("![\r\n]+!",$value,-1,PREG_SPLIT_NO_EMPTY);
+        $counter++;
+      }
       return $match;
     }
 
@@ -548,7 +573,7 @@ class OsWindows extends TypeProcess {
   }
 
 }
-//////李娟尝试!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 class MiApacheHttpd extends TypeProcess {
 
   //正则匹配抽象类的实现
@@ -563,7 +588,7 @@ class MiApacheHttpd extends TypeProcess {
      * logLevel_apache
      * logFolder_apache
      */
-        $assocArray = array(
+      $assocArray = array(
       'prohibitDirectoryListing_apache'=>"",
       'fileAccessForbiden_apache'=> "",
       'ports_apache'=>'',
@@ -574,20 +599,41 @@ class MiApacheHttpd extends TypeProcess {
     );
 
     /****apache配置分析****/
+    //删除所有注释
+    $arr = $this->splitByCommand(".?",null);
+    $arr = preg_grep("!^#!",$arr,PREG_GREP_INVERT);
+    $this->contents = implode("\n",$arr);
+
     //prohibitDirectoryListing_apache
-    $confArray = $this->splitByCommand("\#",null);
-    // print_r($confArray);
-    $pregStr = "!(Options Indexes FollowSymLinks)|(Options -Indexes FollowSymLinks)|(Options FollowSymLinks)!i";
-    //preg_match_all('!('.$cmd1.')[\s\S]*('.$cmd2.')!',$this->contents,$match);
+    $confArray = $this->splitByCommand("<Directory\s+/","</Directory>");
+    $pregStr = "!Options Indexes!i";
     $tempRes = preg_grep($pregStr,$confArray);
-    print_r($tempRes);
     $res = array();
-    foreach($tempRes as $value){
-      $res[] = preg_split("!:!",$value);
+    if($tempRes){
+      foreach($tempRes as $value){
+        $res[] = trim($value);
+      }
+    }else {
+      $res = null;//null表示没有风险
     }
     $assocArray['prohibitDirectoryListing_apache'] = json_encode($res);
-    die();
     //prohibitDirectoryListing_apache
+
+
+    //fileAccessForbiden_apache
+    $confArray = $this->splitByCommandLazy("<Directory.*?>","</Directory>");
+    print_r($confArray);
+    // $pregStr = "!(Options Indexes FollowSymLinks)|(Options -Indexes FollowSymLinks)|(Options FollowSymLinks)!i";
+    // $tempRes = preg_grep($pregStr,$confArray);
+    // $res = array();
+    // foreach($tempRes as $value){
+    //   $res[] = $value;
+    // }
+    // $assocArray['fileAccessForbiden_apache'] = json_encode($res);
+    // print_r($assocArray['fileAccessForbiden_apache']);
+    // die();
+    //fileAccessForbiden_apache
+    die();
 
     /****apache配置分析****/
   }

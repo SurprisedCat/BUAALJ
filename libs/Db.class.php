@@ -19,11 +19,11 @@ class DbLj {
 		$this->conn->set_charset('utf8');
 	}
 	
-	function query($sql) {
+	public function query($sql) {
 		return $this->conn->query($sql);
 	}
 	
-	function selectOneRow($sql) {
+	public function selectOneRow($sql) {
 		$row = array();
 		try{
 			$tempRes = $this->conn->query($sql);
@@ -40,7 +40,7 @@ class DbLj {
 	}
 
 	//一次性更新大量数据，通过关联数组更新
-	function multipleUpdate($assocArray,$tableName,$id){
+	public function multipleUpdate($assocArray,$tableName,$id){
 		$res = true;
 		
 		foreach($assocArray as $key => $value){
